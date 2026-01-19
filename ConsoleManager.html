@@ -1,0 +1,380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Console Manager</title>
+    <style>
+        :root {
+            --bg-dark: transparent;
+            --panel-bg: #141414;
+            --accent-blue: #007aff;
+            --accent-green: #34c759;
+            --accent-red: #ff3b30;
+            --text-main: #ffffff;
+            --text-dim: #888888;
+            --border: #222222;
+        }
+
+        /* Strict Un-scrollable CSS */
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+            overflow: hidden !important; 
+            position: fixed; 
+            background-color: transparent;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            touch-action: none; 
+        }
+
+        /* Animations */
+        @keyframes modalFadeIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes modalFadeOut {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to { opacity: 0; transform: translateY(10px) scale(0.98); }
+        }
+
+        #console-manager-modal {
+            width: 380px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+            padding: 24px;
+            text-align: center;
+            animation: modalFadeIn 2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            will-change: transform, opacity;
+            position: relative;
+            z-index: 100;
+        }
+
+        #console-manager-modal.closing {
+            animation: modalFadeOut 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        /* Draggable Restore Icon */
+        #restore-icon {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 48px;
+            height: 48px;
+            background: var(--panel-bg);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: move;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            z-index: 999;
+            opacity: 1;
+            transition: transform 0.2s ease, opacity 0.8s ease, border-color 0.2s ease;
+            touch-action: none;
+        }
+
+        #restore-icon.idle {
+            opacity: 0.20;
+        }
+
+        #restore-icon:hover { border-color: var(--accent-blue); opacity: 1 !important; }
+        #restore-icon:active { transform: scale(0.9); opacity: 1 !important; }
+        #restore-icon svg { width: 24px; height: 24px; fill: var(--accent-blue); }
+
+        .header { margin-bottom: 24px; }
+        .header h1 { font-size: 1.25rem; font-weight: 600; margin: 0; }
+        .header p { font-size: 0.85rem; color: var(--text-dim); margin-top: 4px; }
+
+        .controls { display: flex; flex-direction: column; gap: 12px; }
+        .control-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: rgba(255, 255, 255, 0.03);
+            padding: 12px 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border);
+        }
+
+        .slider-row { flex-direction: column; align-items: flex-start; gap: 8px; }
+        .label-group { text-align: left; }
+        .label-group .title { font-size: 0.95rem; font-weight: 500; }
+        .label-group .desc { font-size: 0.75rem; color: var(--text-dim); }
+
+        /* Toggle Switch */
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider-toggle {
+            position: absolute; cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #333; transition: .3s; border-radius: 24px;
+        }
+        .slider-toggle:before {
+            position: absolute; content: ""; height: 18px; width: 18px;
+            left: 3px; bottom: 3px; background-color: white; transition: .3s; border-radius: 50%;
+        }
+        input:checked + .slider-toggle { background-color: var(--accent-blue); }
+        input:checked + .slider-toggle:before { transform: translateX(20px); }
+
+        /* Range Slider */
+        .range-slider {
+            -webkit-appearance: none; width: 100%; height: 4px;
+            border-radius: 5px; background: #333; outline: none; margin: 10px 0;
+        }
+        .range-slider::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none;
+            width: 18px; height: 18px; border-radius: 50%;
+            background: var(--accent-blue); cursor: pointer; border: 2px solid var(--panel-bg);
+        }
+
+        .btn-hide {
+            margin-top: 16px; width: 100%; padding: 12px;
+            background: rgba(255, 59, 48, 0.1); border: 1px solid rgba(255, 59, 48, 0.2);
+            color: var(--accent-red); border-radius: 12px; font-size: 0.9rem;
+            font-weight: 600; cursor: pointer; transition: all 0.2s ease;
+        }
+        .btn-hide:hover { background: rgba(255, 59, 48, 0.2); border-color: var(--accent-red); }
+
+        .status-badge {
+            margin-top: 20px; font-size: 0.7rem; color: var(--accent-green);
+            text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700;
+        }
+        .footer-note { margin-top: 24px; font-size: 0.7rem; color: #444; }
+
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+    <!-- Draggable Restore Icon -->
+    <div id="restore-icon" class="hidden" title="Restore Console Manager">
+        <svg viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61 l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41 h-3.84c-0.24,0-0.43,0.17-0.47,0.41l-0.36,2.54c-0.59,0.24-1.13,0.57-1.62,0.94L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87 C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.82,11.68,4.82,12c0,0.32,0.02,0.64,0.07,0.94l-2.03,1.58 c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54 c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96 c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.5c-1.93,0-3.5-1.57-3.5-3.5 s1.57-3.5,3.5-3.5s3.5,1.57,3.5,3.5S13.93,15.5,12,15.5z"/></svg>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="console-manager-modal">
+        <div class="header">
+            <h1>Console Manager</h1>
+            <p>System Monitoring & Cleanup</p>
+        </div>
+
+        <div class="controls">
+            <div class="control-row">
+                <div class="label-group">
+                    <div class="title">Auto-Clean</div>
+                    <div class="desc" id="clean-status">Status: OFF</div>
+                </div>
+                <label class="switch">
+                    <input type="checkbox" id="autoCleanToggle">
+                    <span class="slider-toggle"></span>
+                </label>
+            </div>
+
+            <div class="control-row slider-row">
+                <div class="label-group" style="width: 100%; display: flex; justify-content: space-between;">
+                    <div class="title">Clean Interval</div>
+                    <div class="desc" id="interval-val">2000ms</div>
+                </div>
+                <input type="range" id="intervalSlider" class="range-slider" min="500" max="5000" step="100" value="2000">
+            </div>
+
+            <button class="btn-hide" id="btnHide">Don't Show</button>
+            <div class="status-badge">System Optimized (0% Bugs)</div>
+        </div>
+
+        <div class="footer-note">Powered by UltraPlays</div>
+    </div>
+
+    <script>
+        const CONFIG = {
+            STORAGE_KEY_STATUS: 'console_manager_autoclean_status',
+            STORAGE_KEY_INTERVAL: 'console_manager_autoclean_interval',
+            STORAGE_KEY_HIDDEN: 'console_manager_dontshow_status'
+        };
+
+        const modal = document.getElementById('console-manager-modal');
+        const restoreIcon = document.getElementById('restore-icon');
+        const autoCleanToggle = document.getElementById('autoCleanToggle');
+        const intervalSlider = document.getElementById('intervalSlider');
+        const cleanStatusLabel = document.getElementById('clean-status');
+        const intervalValLabel = document.getElementById('interval-val');
+        const btnHide = document.getElementById('btnHide');
+
+        let cleanInterval = null;
+        let idleTimer = null;
+
+        /**
+         * VISIBILITY & UI STATE
+         */
+        function updateUIVisibility(isHidden) {
+            if (isHidden) {
+                modal.classList.add('hidden');
+                restoreIcon.classList.remove('hidden');
+                resetIdleTimer(); // Start timer when icon appears
+            } else {
+                modal.classList.remove('hidden');
+                modal.classList.remove('closing');
+                restoreIcon.classList.add('hidden');
+                stopIdleTimer(); // Stop timer when icon hidden
+            }
+        }
+
+// Replace your existing hideUI and showUI functions
+function hideUI() {
+    modal.classList.add('hidden');
+    restoreIcon.classList.remove('hidden');
+    window.parent.postMessage('CLOSE_MENU', '*'); // Tell content.js to shrink the iframe
+}
+
+function showUI() {
+    modal.classList.remove('hidden');
+    restoreIcon.classList.add('hidden');
+    window.parent.postMessage('OPEN_MENU', '*'); // Tell content.js to expand the iframe
+}
+
+        /**
+         * IDLE FADE LOGIC
+         */
+        function resetIdleTimer() {
+            stopIdleTimer();
+            restoreIcon.classList.remove('idle');
+            idleTimer = setTimeout(() => {
+                restoreIcon.classList.add('idle');
+            }, 3000);
+        }
+
+        function stopIdleTimer() {
+            if (idleTimer) clearTimeout(idleTimer);
+        }
+
+        /**
+         * CLEANING LOGIC
+         */
+        function startCleaning(ms) {
+            if (cleanInterval) clearInterval(cleanInterval);
+            cleanInterval = setInterval(() => console.clear(), ms);
+        }
+
+        function toggleAutoClean(isActive, isInitialLoad = false) {
+            localStorage.setItem(CONFIG.STORAGE_KEY_STATUS, isActive);
+            if (isActive) {
+                cleanStatusLabel.innerText = "Status: ON (Active)";
+                cleanStatusLabel.style.color = "var(--accent-blue)";
+                startCleaning(parseInt(intervalSlider.value));
+                if (!isInitialLoad) {
+                    console.clear();
+                    console.info(`%c[ConsoleManager] Auto-Clean Active`, "color: #007aff; font-weight: bold;");
+                }
+            } else {
+                cleanStatusLabel.innerText = "Status: OFF";
+                cleanStatusLabel.style.color = "var(--text-dim)";
+                if (cleanInterval) clearInterval(cleanInterval);
+            }
+        }
+
+        /**
+         * DRAG LOGIC
+         */
+        let isDragging = false;
+        let startX, startY, initialLeft, initialTop;
+
+        function onDragStart(e) {
+            isDragging = false;
+            resetIdleTimer(); // Wake up icon on touch
+            const touch = e.type === 'touchstart' ? e.touches[0] : e;
+            startX = touch.clientX;
+            startY = touch.clientY;
+            initialLeft = restoreIcon.offsetLeft;
+            initialTop = restoreIcon.offsetTop;
+
+            document.addEventListener('mousemove', onDragging);
+            document.addEventListener('mouseup', onDragEnd);
+            document.addEventListener('touchmove', onDragging, { passive: false });
+            document.addEventListener('touchend', onDragEnd);
+        }
+
+        function onDragging(e) {
+            if (e.cancelable) e.preventDefault();
+            const touch = e.type === 'touchmove' ? e.touches[0] : e;
+            const deltaX = touch.clientX - startX;
+            const deltaY = touch.clientY - startY;
+
+            if (Math.abs(deltaX) > 5 || Math.abs(deltaY) > 5) isDragging = true;
+
+            let newX = initialLeft + deltaX;
+            let newY = initialTop + deltaY;
+
+            newX = Math.max(10, Math.min(window.innerWidth - 60, newX));
+            newY = Math.max(10, Math.min(window.innerHeight - 60, newY));
+
+            restoreIcon.style.left = newX + 'px';
+            restoreIcon.style.top = newY + 'px';
+            restoreIcon.style.bottom = 'auto';
+            restoreIcon.style.right = 'auto';
+            
+            resetIdleTimer(); // Reset timer while moving
+        }
+
+        function onDragEnd() {
+            document.removeEventListener('mousemove', onDragging);
+            document.removeEventListener('mouseup', onDragEnd);
+            document.removeEventListener('touchmove', onDragging);
+            document.removeEventListener('touchend', onDragEnd);
+            
+            if (!isDragging) {
+                showUI();
+            } else {
+                resetIdleTimer(); // Start 3s countdown after drop
+            }
+        }
+
+        /**
+         * PREVENT SCROLL GESTURES
+         */
+        document.addEventListener('touchmove', (e) => {
+            if (e.scale !== 1) e.preventDefault();
+        }, { passive: false });
+
+        /**
+         * EVENTS
+         */
+        autoCleanToggle.addEventListener('change', (e) => toggleAutoClean(e.target.checked));
+        intervalSlider.addEventListener('input', (e) => {
+            const val = e.target.value;
+            intervalValLabel.innerText = `${val}ms`;
+            localStorage.setItem(CONFIG.STORAGE_KEY_INTERVAL, val);
+            if (autoCleanToggle.checked) startCleaning(parseInt(val));
+        });
+
+        btnHide.addEventListener('click', hideUI);
+        restoreIcon.addEventListener('mousedown', onDragStart);
+        restoreIcon.addEventListener('touchstart', onDragStart, { passive: false });
+
+        window.onload = () => {
+            const isHidden = localStorage.getItem(CONFIG.STORAGE_KEY_HIDDEN) === 'true';
+            updateUIVisibility(isHidden);
+
+            const savedInterval = localStorage.getItem(CONFIG.STORAGE_KEY_INTERVAL) || "2000";
+            intervalSlider.value = savedInterval;
+            intervalValLabel.innerText = `${savedInterval}ms`;
+
+            const savedStatus = localStorage.getItem(CONFIG.STORAGE_KEY_STATUS) === 'true';
+            autoCleanToggle.checked = savedStatus;
+            toggleAutoClean(savedStatus, true);
+
+            console.info("ConsoleManager version 1.2.3 initialized (Idle Fade Active).");
+        };
+    </script>
+</body>
+</html>
